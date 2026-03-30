@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neon Jungle Bird</title>
+    
+    <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            touch-action: none; /* Prevents pull-to-refresh on Telegram */
+        }
+
+        body {
+            background-color: #050510; /* Deep Jungle Night */
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #fff;
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* UI Overlays */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* Let clicks pass through to canvas by default */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+
+        #score-display {
+            position: absolute;
+            top: 10%;
+            font-size: 4rem;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 0 0 10px #ff00ff, 0 0 20px #ff00ff;
+            z-index: 10;
+        }
+
+        .panel {
+            background: rgba(10, 10, 30, 0.85);
+            padding: 30px;
+            border-radius: 15px;
+            border: 2px solid #00ffcc;
+            box-shadow: 0 0 15px #00ffcc;
+            pointer-events: auto; /* Enable clicks on panels */
+            display: none; /* Hidden by default */
+            flex-direction: column;
+            gap: 15px;
+            z-index: 20;
+        }
+
+        h1 {
+            font-size: 2rem;
+            text-shadow: 0 0 10px #00ffcc;
+            margin-bottom: 10px;
+        }
+
+        p {
+            font-size: 1.2rem;
+            color: #ccc;
+        }
+
+        button {
+            padding: 15px 20px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #fff;
+            background: transparent;
+            border: 2px solid;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .btn-play {
+            border-color: #00ffcc;
+            text-shadow: 0 0 5px #00ffcc;
+            box-shadow: inset 0 0 10px #00ffcc, 0 0 10px #00ffcc;
+        }
+
+        .btn-play:active { background: #00ffcc; color: #000; }
+
+        .btn-ad {
+            border-color: #ff00ff;
+            text-shadow: 0 0 5px #ff00ff;
+            box-shadow: inset 0 0 10px #ff00ff, 0 0 10px #ff00ff;
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .btn-ad:active { background: #ff00ff; color: #000; }
+
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="ui-layer">
+        <div id="score-display">0</div>
+
+        <div id="start-panel" class="panel" style="display: flex;">
+            <h1>Neon Jungle Bird</h1>
+            <p>Tap to jump. Avoid the neon bamboo.</p>
+            <button class="btn-play" onclick="startGame()">Start Game</button>
+        </div>
+
+        <div id="gameover-panel" class="panel">
+            <h1>Game Over</h1>
+            <p>Score: <span id="final-score">0</span></p>
+            <button class="btn-play" onclick="resetGame()">Restart Game</button>
+            <button class="btn-ad" onclick="watchAdToRevive()">
+                ▶ Watch Ad to Revive
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 1. ADSGRAM SDK INITIALIZATION
+        // ==========================================
+        let AdController = null;
+        
+        window.onload = () => {
+            if (window.Adsgram) {
+                AdController = window.Adsgram.init({ blockId: "26340" });
+                console.log("Adsgram initialized.");
+            } else {
+                console.error("Adsgram SDK failed to load.");
+            }
+        };
+
+        // ==========================================
+        // 2. AUDIO & HAPTIC SYSTEM (No external files)
+        // ==========================================
+        let audioCtx;
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        function playSound(type) {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            if (type === 'jump') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.1);
+            } else if (type === 'crash') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(10, audioCtx.currentTime + 0.3);
+                gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.3);
+            } else if (type === 'score') {
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+                osc.frequency.setValueAtTime(1200, audioCtx.currentTime + 0.05);
+                gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.1);
+            }
+        }
+
+        function triggerHaptic(type) {
+            if (!navigator.vibrate) return;
+            if (type === 'jump') navigator.vibrate(20);
+            if (type === 'crash') navigator.vibrate([50, 50, 100]);
+            if (type === 'score') navigator.vibrate(30);
+        }
+
+        // ==========================================
+        // 3. GAME ENGINE
+        // ==========================================
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // UI Elements
+        const uiScore = document.getElementById('score-display');
+        const startPanel = document.getElementById('start-panel');
+        const gameoverPanel = document.getElementById('gameover-panel');
+        const finalScoreText = document.getElementById('final-score');
+
+        let frames = 0;
+        let score = 0;
+        let gameState = 'start'; // start, playing, gameover
+        let animationId;
+        
+        // Responsive Canvas
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Game Objects
+        const bird = {
+            x: 50,
+            y: canvas.height / 2,
+            radius: 12,
+            velocity: 0,
+            gravity: 0.25, // Adjusted for mobile screen sizing
+            jumpStrength: 6,
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = '#ff00ff';
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = '#ff00ff';
+                ctx.fill();
+                ctx.closePath();
+                ctx.shadowBlur = 0; // reset
+            },
+            update() {
+                this.velocity += this.gravity;
+                this.y += this.velocity;
+                
+                // Floor / Ceiling collision
+                if (this.y + this.radius >= canvas.height || this.y - this.radius <= 0) {
+                    gameOver();
+                }
+            },
+            jump() {
+                this.velocity = -this.jumpStrength;
+                playSound('jump');
+                triggerHaptic('jump');
+            }
+        };
+
+        const pipes = {
+            items: [],
+            width: 60,
+            gap: 180,
+            speed: 3,
+            draw() {
+                for (let i = 0; i < this.items.length; i++) {
+                    let p = this.items[i];
+                    
+                    ctx.fillStyle = '#050510'; // Core color
+                    ctx.strokeStyle = '#00ffcc'; // Neon Outline
+                    ctx.lineWidth = 3;
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = '#00ffcc'; // Jungle green neon
+
+                    // Top Pipe
+                    ctx.fillRect(p.x, 0, this.width, p.top);
+                    ctx.strokeRect(p.x, 0, this.width, p.top);
+                    
+                    // Bottom Pipe
+                    ctx.fillRect(p.x, canvas.height - p.bottom, this.width, p.bottom);
+                    ctx.strokeRect(p.x, canvas.height - p.bottom, this.width, p.bottom);
+                    
+                    ctx.shadowBlur = 0; // reset
+                }
+            },
+            update() {
+                // Add new pipes
+                if (frames % 100 === 0) {
+                    let minHeight = 50;
+                    let maxTop = canvas.height - this.gap - minHeight;
+                    let topHeight = Math.floor(Math.random() * (maxTop - minHeight + 1) + minHeight);
+                    let bottomHeight = canvas.height - topHeight - this.gap;
+                    
+                    this.items.push({
+                        x: canvas.width,
+                        top: topHeight,
+                        bottom: bottomHeight,
+                        passed: false
+                    });
+                }
+
+                for (let i = 0; i < this.items.length; i++) {
+                    let p = this.items[i];
+                    p.x -= this.speed;
+
+                    // Collision detection
+                    if (
+                        bird.x + bird.radius > p.x && 
+                        bird.x - bird.radius < p.x + this.width &&
+                        (bird.y - bird.radius < p.top || bird.y + bird.radius > canvas.height - p.bottom)
+                    ) {
+                        gameOver();
+                    }
+
+                    // Score Update
+                    if (p.x + this.width < bird.x && !p.passed) {
+                        score++;
+                        uiScore.innerText = score;
+                        p.passed = true;
+                        playSound('score');
+                        triggerHaptic('score');
+                    }
+
+                    // Remove off-screen pipes
+                    if (p.x + this.width < 0) {
+                        this.items.shift();
+                        i--;
+                    }
+                }
+            },
+            reset() {
+                this.items = [];
+            }
+        };
+
+        // Input Handling
+        function handleInput(e) {
+            if (e.type === 'touchstart') e.preventDefault(); // Prevent scroll/zoom
+            
+            initAudio(); // Initialize audio context on first user interaction
+
+            if (gameState === 'playing') {
+                bird.jump();
+            }
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') handleInput(e);
+        });
+        canvas.addEventListener('mousedown', handleInput);
+        canvas.addEventListener('touchstart', handleInput, { passive: false });
+
+        // Game Loop
+        function loop() {
+            // Draw Background (Trails effect for neon look)
+            ctx.fillStyle = 'rgba(5, 5, 16, 0.4)'; 
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            if (gameState === 'playing') {
+                bird.update();
+                pipes.update();
+                frames++;
+            }
+
+            pipes.draw();
+            bird.draw();
+
+            if (gameState !== 'gameover' || frames > 0) { // keep drawing if not completely stopped
+                 animationId = requestAnimationFrame(loop);
+            }
+        }
+
+        // State Management
+        function startGame() {
+            initAudio();
+            startPanel.style.display = 'none';
+            gameoverPanel.style.display = 'none';
+            
+            // Adjust physics based on screen size dynamically
+            bird.gravity = canvas.height * 0.0004;
+            bird.jumpStrength = canvas.height * 0.008;
+            pipes.gap = canvas.height * 0.25;
+            pipes.speed = canvas.width * 0.008;
+            if(pipes.speed < 3) pipes.speed = 3; // minimum speed
+            
+            resetGameVariables();
+            gameState = 'playing';
+            uiScore.style.display = 'block';
+        }
+
+        function resetGameVariables() {
+            bird.y = canvas.height / 2;
+            bird.velocity = 0;
+            pipes.reset();
+            score = 0;
+            frames = 0;
+            uiScore.innerText = score;
+        }
+
+        function resetGame() {
+            resetGameVariables();
+            startGame();
+        }
+
+        function gameOver() {
+            gameState = 'gameover';
+            playSound('crash');
+            triggerHaptic('crash');
+            
+            uiScore.style.display = 'none';
+            finalScoreText.innerText = score;
+            gameoverPanel.style.display = 'flex';
+        }
+
+        // ==========================================
+        // 4. REWARDED AD LOGIC (Adsgram)
+        // ==========================================
+        function watchAdToRevive() {
+            if (!AdController) {
+                alert("Ad SDK not ready or blocked by browser.");
+                return;
+            }
+
+            // Show the Adsgram Ad
+            AdController.show().then((result) => {
+                // User watched the ad successfully!
+                console.log("Ad finished:", result);
+                reviveBird();
+            }).catch((error) => {
+                // User closed the ad early or an error occurred
+                console.error("Ad failed or skipped:", error);
+                alert("Ad was skipped or failed to load. Try restarting.");
+            });
+        }
+
+        function reviveBird() {
+            // Hide game over screen
+            gameoverPanel.style.display = 'none';
+            uiScore.style.display = 'block';
+            
+            // Push bird back to the middle and reset velocity safely
+            bird.y = canvas.height / 2;
+            bird.velocity = 0;
+            
+            // Clear immediate upcoming pipes to give the player breathing room
+            pipes.items = pipes.items.filter(p => p.x > canvas.width / 2);
+            
+            // Resume play
+            gameState = 'playing';
+        }
+
+        // Start drawing the initial frame
+        loop();
+    </script>
+</body>
+</html>
