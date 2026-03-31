@@ -62,14 +62,16 @@
             pointer-events: auto; /* Enable clicks on panels */
             display: none; /* Hidden by default */
             flex-direction: column;
+            align-items: center;
             gap: 15px;
             z-index: 20;
+            max-width: 90%;
         }
 
         h1 {
             font-size: 2rem;
             text-shadow: 0 0 10px #00ffcc;
-            margin-bottom: 10px;
+            margin-bottom: 5px;
         }
 
         p {
@@ -87,6 +89,7 @@
             border-radius: 8px;
             cursor: pointer;
             transition: 0.2s;
+            width: 100%;
         }
 
         .btn-play {
@@ -101,7 +104,6 @@
             border-color: #ff00ff;
             text-shadow: 0 0 5px #ff00ff;
             box-shadow: inset 0 0 10px #ff00ff, 0 0 10px #ff00ff;
-            margin-top: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -109,6 +111,19 @@
         }
 
         .btn-ad:active { background: #ff00ff; color: #000; }
+
+        /* Task Ad Container */
+        .task-container {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid rgba(0, 255, 204, 0.3);
+            width: 100%;
+        }
+
+        .task {
+            display: block;
+            width: 100%;
+        }
 
     </style>
 </head>
@@ -123,6 +138,15 @@
             <h1>Neon Jungle Bird</h1>
             <p>Tap to jump. Avoid the neon bamboo.</p>
             <button class="btn-play" onclick="startGame()">Start Game</button>
+            
+            <div class="task-container">
+                <adsgram-task
+                   data-block-id='task-26386'
+                   data-debug="true"
+                   data-debug-console="false"
+                   class="task"
+                ></adsgram-task>
+            </div>
         </div>
 
         <div id="gameover-panel" class="panel">
@@ -132,6 +156,15 @@
             <button class="btn-ad" onclick="watchAdToRevive()">
                 ▶ Watch Ad to Revive
             </button>
+            
+            <div class="task-container">
+                <adsgram-task
+                   data-block-id='task-26386'
+                   data-debug="true"
+                   data-debug-console="false"
+                   class="task"
+                ></adsgram-task>
+            </div>
         </div>
     </div>
 
@@ -139,19 +172,33 @@
         // ==========================================
         // 1. ADSGRAM SDK INITIALIZATION
         // ==========================================
-        let AdController = null;
+        let AdController = null;          // For Rewarded Ads
+        let InterstitialController = null; // For Interstitial Ads
+        let gameOverCount = 0;             // Counter for interstitial trigger
         
         window.onload = () => {
             if (window.Adsgram) {
+                // Initialize Rewarded Ad
                 AdController = window.Adsgram.init({ blockId: "26340" });
-                console.log("Adsgram initialized.");
+                
+                // Initialize Interstitial Ad
+                InterstitialController = window.Adsgram.init({ blockId: "int-26385" });
+                
+                console.log("Adsgram initialized for both Rewarded and Interstitial ads.");
+
+                // Show Interstitial Ad right when the game loads (in starting)
+                // Note: Some browsers block ads without user interaction, but AdsGram will attempt it.
+                setTimeout(() => {
+                    showInterstitialAd();
+                }, 1000); 
+
             } else {
                 console.error("Adsgram SDK failed to load.");
             }
         };
 
         // ==========================================
-        // 2. AUDIO & HAPTIC SYSTEM (No external files)
+        // 2. AUDIO & HAPTIC SYSTEM 
         // ==========================================
         let audioCtx;
         function initAudio() {
@@ -216,7 +263,7 @@
 
         let frames = 0;
         let score = 0;
-        let gameState = 'start'; // start, playing, gameover
+        let gameState = 'start'; 
         let animationId;
         
         // Responsive Canvas
@@ -233,7 +280,7 @@
             y: canvas.height / 2,
             radius: 12,
             velocity: 0,
-            gravity: 0.25, // Adjusted for mobile screen sizing
+            gravity: 0.25,
             jumpStrength: 6,
             draw() {
                 ctx.beginPath();
@@ -243,7 +290,7 @@
                 ctx.shadowColor = '#ff00ff';
                 ctx.fill();
                 ctx.closePath();
-                ctx.shadowBlur = 0; // reset
+                ctx.shadowBlur = 0; 
             },
             update() {
                 this.velocity += this.gravity;
@@ -270,25 +317,22 @@
                 for (let i = 0; i < this.items.length; i++) {
                     let p = this.items[i];
                     
-                    ctx.fillStyle = '#050510'; // Core color
-                    ctx.strokeStyle = '#00ffcc'; // Neon Outline
+                    ctx.fillStyle = '#050510'; 
+                    ctx.strokeStyle = '#00ffcc'; 
                     ctx.lineWidth = 3;
                     ctx.shadowBlur = 15;
-                    ctx.shadowColor = '#00ffcc'; // Jungle green neon
+                    ctx.shadowColor = '#00ffcc'; 
 
-                    // Top Pipe
                     ctx.fillRect(p.x, 0, this.width, p.top);
                     ctx.strokeRect(p.x, 0, this.width, p.top);
                     
-                    // Bottom Pipe
                     ctx.fillRect(p.x, canvas.height - p.bottom, this.width, p.bottom);
                     ctx.strokeRect(p.x, canvas.height - p.bottom, this.width, p.bottom);
                     
-                    ctx.shadowBlur = 0; // reset
+                    ctx.shadowBlur = 0; 
                 }
             },
             update() {
-                // Add new pipes
                 if (frames % 100 === 0) {
                     let minHeight = 50;
                     let maxTop = canvas.height - this.gap - minHeight;
@@ -339,9 +383,12 @@
 
         // Input Handling
         function handleInput(e) {
-            if (e.type === 'touchstart') e.preventDefault(); // Prevent scroll/zoom
+            // Prevent scrolling/zooming on mobile, but let clicks pass if on a button/task
+            if (e.target.tagName !== 'BUTTON' && !e.target.closest('adsgram-task')) {
+                if (e.type === 'touchstart') e.preventDefault(); 
+            }
             
-            initAudio(); // Initialize audio context on first user interaction
+            initAudio(); 
 
             if (gameState === 'playing') {
                 bird.jump();
@@ -356,7 +403,6 @@
 
         // Game Loop
         function loop() {
-            // Draw Background (Trails effect for neon look)
             ctx.fillStyle = 'rgba(5, 5, 16, 0.4)'; 
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -369,7 +415,7 @@
             pipes.draw();
             bird.draw();
 
-            if (gameState !== 'gameover' || frames > 0) { // keep drawing if not completely stopped
+            if (gameState !== 'gameover' || frames > 0) {
                  animationId = requestAnimationFrame(loop);
             }
         }
@@ -380,12 +426,11 @@
             startPanel.style.display = 'none';
             gameoverPanel.style.display = 'none';
             
-            // Adjust physics based on screen size dynamically
             bird.gravity = canvas.height * 0.0004;
             bird.jumpStrength = canvas.height * 0.008;
             pipes.gap = canvas.height * 0.25;
             pipes.speed = canvas.width * 0.008;
-            if(pipes.speed < 3) pipes.speed = 3; // minimum speed
+            if(pipes.speed < 3) pipes.speed = 3; 
             
             resetGameVariables();
             gameState = 'playing';
@@ -407,6 +452,9 @@
         }
 
         function gameOver() {
+            // Prevent multiple triggers of gameOver if bird falls off screen after hitting pipe
+            if(gameState === 'gameover') return; 
+
             gameState = 'gameover';
             playSound('crash');
             triggerHaptic('crash');
@@ -414,43 +462,58 @@
             uiScore.style.display = 'none';
             finalScoreText.innerText = score;
             gameoverPanel.style.display = 'flex';
+
+            // Interstitial Ad Logic: Every 5 deaths
+            gameOverCount++;
+            if (gameOverCount % 5 === 0) {
+                showInterstitialAd();
+            }
         }
 
         // ==========================================
-        // 4. REWARDED AD LOGIC (Adsgram)
+        // 4. AD LOGIC (Adsgram)
         // ==========================================
+        
+        // --- Rewarded Ad ---
         function watchAdToRevive() {
             if (!AdController) {
-                alert("Ad SDK not ready or blocked by browser.");
+                alert("Rewarded Ad SDK not ready or blocked by browser.");
                 return;
             }
 
-            // Show the Adsgram Ad
             AdController.show().then((result) => {
-                // User watched the ad successfully!
-                console.log("Ad finished:", result);
+                console.log("Rewarded Ad finished:", result);
                 reviveBird();
             }).catch((error) => {
-                // User closed the ad early or an error occurred
-                console.error("Ad failed or skipped:", error);
+                console.error("Rewarded Ad failed or skipped:", error);
                 alert("Ad was skipped or failed to load. Try restarting.");
             });
         }
 
         function reviveBird() {
-            // Hide game over screen
             gameoverPanel.style.display = 'none';
             uiScore.style.display = 'block';
             
-            // Push bird back to the middle and reset velocity safely
             bird.y = canvas.height / 2;
             bird.velocity = 0;
             
-            // Clear immediate upcoming pipes to give the player breathing room
             pipes.items = pipes.items.filter(p => p.x > canvas.width / 2);
             
-            // Resume play
             gameState = 'playing';
+        }
+
+        // --- Interstitial Ad ---
+        function showInterstitialAd() {
+            if (!InterstitialController) {
+                console.warn("Interstitial Ad SDK not ready.");
+                return;
+            }
+
+            InterstitialController.show().then((result) => {
+                console.log("Interstitial Ad finished naturally:", result);
+            }).catch((error) => {
+                console.error("Interstitial Ad failed or was closed:", error);
+            });
         }
 
         // Start drawing the initial frame
